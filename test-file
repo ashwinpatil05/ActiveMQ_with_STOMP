@@ -1,0 +1,192 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: >
+  Leibniz
+  Creates the infrastructure to host Leibniz:
+      - S3 Buckets + Policies
+      - S3 VPC Endpoint
+      - DynamoDB
+      - Secrets Manager
+      - Parameter Store
+
+Parameters:
+  VpcId:
+    Type: String
+    Description: VPC ID
+  RouteTableIds:
+    Type: String
+    Default: dev
+    Description: Route table ID
+  SubnetIds:
+    Type: String
+    Description: List of Subnet IDs
+  S3VPCEndpointId:
+    Type: String
+    Default: dev
+    Description: S3 VPC Endpoint ID
+  Department:
+    Type: String
+    Default: department
+    Description: Department
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+    Description: Environment
+  MonthlyBudget:
+    Type: String
+    Default: N
+    Description: Monthly budget (Y/N)
+  Platform:
+    Type: String
+    Default: Platform
+    Description: Platform
+  Project:
+    Type: String
+    Description: Project
+  SubjectArea:
+    Type: String
+    Default: SubjectAreaA
+    Description: Subject Area
+  WBSCode:
+    Type: String
+    Default: NA
+    Description: Work Breakdown Structure Code
+  AWSManagedPolicyGlueServiceRole:
+    Type: String
+    Default: NA
+    Description: AWS Managed Policy arn for AWSGlueServiceRole
+  AthenaWorkgroupMedical:
+    Type: String
+    Default: NA
+    Description: Athena Workgroup for Medical Role
+  AthenaWorkgroupCommercial:
+    Type: String
+    Default: NA
+    Description: Athena Workgroup for Commercial Role
+  PingFederateIssuerEndpoint:
+    Type: String
+    Default: NA
+    Description: The Issuer URL for PingFederate
+  PingFederateAuthEndpoint:
+    Type: String
+    Default: NA
+    Description: The Auth URL for PingFederate
+  PingFederateTokenEndpoint:
+    Type: String
+    Description: The Token URL for PingFederate
+  PingFederateJWKSEndpoint:
+    Type: String
+    Description: The JWKS URL for PingFederate
+  ListSubnetIds:
+    Type: String
+    Description: Subnet IDs for OpenSearch
+  Subnet1:
+    Type: String
+    Description: List of Subnet IDs
+  Subnet2:
+    Type: String
+    Description: List of Subnet IDs
+Resources:
+  # Security Group 
+  LeibnizSecurityGroup: 
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Join ["-", [!Ref Department, !Ref Platform, !Ref Environment, !Ref Project, !Ref SubjectArea, 'sg']]
+      GroupDescription: 'Leibniz Security Group'
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 443
+        ToPort: 443
+        CidrIp: 0.0.0.0/0
+
+
+  OpenSearchServiceDomain:
+    Type: AWS::OpenSearchService::Domain
+    Properties:
+      # DomainName: !Join ["-", [!Ref Department, !Ref Platform, !Ref Environment, !Ref Project, !Ref SubjectArea, 'domain']]
+      DomainName: !Join ["-", [!Ref Project, !Ref SubjectArea, 'domain']]
+      EngineVersion: 'OpenSearch_2.7' 
+      AccessPolicies:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: "*"
+            Action: es:*
+            # Resource: !Sub "arn:aws:es:${AWS::Region}:${AWS::AccountId}:domain/${Department}-${Platform}-${Environment}-${Project}-${SubjectArea}-opensearch-domain/*"
+            Resource: !Sub "arn:aws:es:${AWS::Region}:${AWS::AccountId}:domain/${Project}-${SubjectArea}-domain/*"
+      AdvancedOptions:
+        rest.action.multi.allow_explicit_index: 'false'
+      AdvancedSecurityOptions:
+        Enabled: false
+        # InternalUserDatabaseEnabled: true
+        # MasterUserOptions: 
+        #   MasterUserOptions
+        # SAMLOptions: 
+        #     Enabled: true
+            # Idp:
+            #   Idp
+            # MasterBackendRole: String
+            # MasterUserName: String
+            # RolesKey: String
+            # SessionTimeoutMinutes: Integer
+            # SubjectKey: String
+      ClusterConfig: 
+        DedicatedMasterCount: 3
+        DedicatedMasterEnabled: true
+        DedicatedMasterType: 'c5.large.search'
+        InstanceCount: 2
+        InstanceType: 'm5.2xlarge.search'
+        MultiAZWithStandbyEnabled: false
+        ZoneAwarenessConfig: 
+          AvailabilityZoneCount: 2
+        ZoneAwarenessEnabled: true
+
+      # DomainEndpointOptions: 
+      #   CustomEndpoint: 'domainname.com'
+      #   CustomEndpointCertificateArn: 'CertARN'
+      #   CustomEndpointEnabled: true
+      #   EnforceHTTPS: true
+      #   TLSSecurityPolicy: Policy-Min-TLS-1-2-2019-07
+
+      EBSOptions:
+        EBSEnabled: true
+        VolumeSize: 190
+        VolumeType: gp3
+
+      EncryptionAtRestOptions: 
+        Enabled: true
+        KmsKeyId: 'KeyID'
+
+      
+      # LogPublishingOptions: 
+      #   Key: Value
+      NodeToNodeEncryptionOptions: 
+          Enabled: true
+      # OffPeakWindowOptions: 
+      #   OffPeakWindowOptions
+      # SnapshotOptions: 
+      #   SnapshotOptions
+      # SoftwareUpdateOptions: 
+      #   SoftwareUpdateOptions
+      # Tags: 
+      #   - Tag
+      VPCOptions:
+        SubnetIds:
+          - !Ref Subnet1
+          - !Ref Subnet2
+        SecurityGroupIds:
+          - !GetAtt LeibnizSecurityGroup.GroupId
+
+Outputs:
+  SecurityGroupId:
+    Description: The security group ID for Leibniz
+    Value: !Ref LeibnizSecurityGroup
+
+
+aws --region us-east-2 cloudformation create-stack --stack-name test-opensearch-managed --template-body file://core-infrastructure-final-version.yaml --parameters file://dev-config.json
